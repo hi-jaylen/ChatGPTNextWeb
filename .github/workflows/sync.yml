@@ -19,7 +19,17 @@ jobs:
       - name: Checkout target repo
         uses: actions/checkout@v3
 
-      # Step 2: run the sync action
+      # Step 2: Install GitHub CLI
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      # Step 3: Authenticate with GitHub CLI
+      - name: Authenticate with GitHub CLI
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      # Step 4: run the sync action
       - name: Sync upstream changes
         id: sync
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
@@ -28,9 +38,24 @@ jobs:
           upstream_sync_branch: main
           target_sync_branch: main
           target_repo_token: ${{ secrets.GITHUB_TOKEN }} # automatically generated, no need to set
-
-          # Set test_mode true to run tests instead of the true action!!
           test_mode: false
+
+      # Step 5: Clean up old workflow runs
+      - name: Cleanup old workflow runs
+        run: |
+          echo "Cleaning up old workflow runs..."
+          WORKFLOW_ID=$(gh workflow list --json id --jq '.[0].id') # Get the current workflow ID
+          RUNS=$(gh run list --workflow "$WORKFLOW_ID" --json databaseId --jq '.[] | .databaseId') # Get all runs
+          RUN_COUNT=$(echo "$RUNS" | wc -l)
+
+          if [ "$RUN_COUNT" -gt 3 ]; then
+            echo "$RUNS" | head -n -3 | while read -r RUN_ID; do
+              echo "Deleting run ID: $RUN_ID"
+              gh run delete "$RUN_ID" --confirm
+            done
+          else
+            echo "No old runs to delete."
+          fi
 
       - name: Sync check
         if: failure()
